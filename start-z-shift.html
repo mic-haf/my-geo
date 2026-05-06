@@ -103,7 +103,7 @@
       table = $('#propsTable').DataTable({
         paging: true,
         pageLength: 25,
-        columns: tableColumns.map(() => ({ data: null, defaultContent: '' })),
+        columns: tableColumns.map((_, i) => ({ data: i, defaultContent: '' })),
         ordering: true,
         searching: true,
         info: true,
