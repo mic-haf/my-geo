@@ -43,6 +43,42 @@
   </div>
 
   <script>
+    // Karte + Basiskarten
+  let map = L.map('map', { zoomControl: true }).setView([0,0], 2);
+
+  // Basiskarten definieren
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OSM'
+  });
+
+  // Beispiel Swisstopo WMTS (Beispiel-Layernamen: ch.swisstopo.pixelkarte-farbe)
+  // Hinweis: prüfe in geo.admin.ch/WMTS die verfügbaren Layer-Namen und Projektionen.
+  const swisstopoRaster = L.tileLayer('https://wmts.geo.admin.ch/1.0.0/{layer}/default/current/3857/{z}/{x}/{y}.jpeg', {
+    layer: 'ch.swisstopo.pixelkarte-farbe', // anpassen: z.B. ch.swisstopo.pixelkarte-farbe, ch.swisstopo.swisstlm3d-karte etc.
+    maxZoom: 20,
+    attribution: '© swisstopo'
+  });
+
+  // Optional: weiteres swisstopo-Produkt (z.B. graue Karte)
+  const swisstopoGraubraun = L.tileLayer('https://wmts.geo.admin.ch/1.0.0/{layer}/default/current/3857/{z}/{x}/{y}.jpeg', {
+    layer: 'ch.swisstopo.pixelkarte-grau', // Beispielname - anpassen falls nötig
+    maxZoom: 20,
+    attribution: '© swisstopo'
+  });
+
+  // Default OSM hinzufügen
+  osm.addTo(map);
+
+  // Baselayer-Objekt für Layer-Control
+  const baseLayers = {
+    'OpenStreetMap': osm,
+    'swisstopo: Pixelkarte Farbe': swisstopoRaster,
+    'swisstopo: Pixelkarte Grau': swisstopoGraubraun
+  };
+
+  // Layer control (oben rechts)
+  L.control.layers(baseLayers, null, { collapsed: false }).addTo(map);
+    
   // Globals
   let map = L.map('map').setView([0,0], 2);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
