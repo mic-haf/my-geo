@@ -71,7 +71,7 @@
   let tableColumns = []; // header keys order: all properties keys + lon + lat
 
   // Load GeoJSON
-  fetch('https://github.com/mic-haf/my-geo/blob/main/z-shift_4.geojson')
+  fetch('https://mic-haf.github.io/my-geo/z-shift_4.geojson')
     .then(r => {
       if (!r.ok) throw new Error('GeoJSON konnte nicht geladen werden');
       return r.json();
