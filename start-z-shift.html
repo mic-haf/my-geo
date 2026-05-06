@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Map + Table — z-shift_4.geojson</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- jQuery & DataTables -->
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" />
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+  <style>
+    html,body { height:100%; margin:0; font-family: Arial, sans-serif; }
+    #container { display:flex; height:100vh; gap:8px; padding:8px; box-sizing:border-box; }
+    #map { flex:1 1 60%; min-width:300px; border:1px solid #ccc; }
+    #side { flex:1 1 40%; display:flex; flex-direction:column; gap:8px; min-width:300px; }
+    #controls { display:flex; gap:8px; align-items:center; }
+    #tableWrap { flex:1 1 auto; overflow:auto; border:1px solid #ccc; }
+    table.dataTable { width:100% !important; }
+    button { padding:6px 10px; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="map"></div>
+    <div id="side">
+      <div id="controls">
+        <button id="zoomAll">Alle Punkte</button>
+        <button id="exportCSV">CSV export (sichtbar)</button>
+        <div style="margin-left:auto">Visible: <span id="visibleCount">0</span></div>
+      </div>
+      <div id="tableWrap">
+        <table id="propsTable" class="display" cellspacing="0">
+          <thead><tr id="tableHead"></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Globals
+  let map = L.map('map').setView([0,0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OSM'
+  }).addTo(map);
+
+  let geojsonLayer = L.geoJSON(null, {
+    onEachFeature: (feat, layer) => {
+      // popup with all properties (simple)
+      const props = feat.properties || {};
+      const coords = feat.geometry && feat.geometry.type === 'Point' ? feat.geometry.coordinates : [];
+      const coordText = coords.length ? `Lon: ${coords[0]}, Lat: ${coords[1]}` : '';
+      let html = '<table>';
+      for (let k in props) html += `<tr><th style="text-align:left;padding-right:8px">${k}</th><td>${props[k]}</td></tr>`;
+      html += `<tr><th style="text-align:left;padding-right:8px">coords</th><td>${coordText}</td></tr>`;
+      html += '</table>';
+      layer.bindPopup(html);
+      layer.on('click', () => {
+        // optional: highlight row in table if needed
+      });
+    }
+  }).addTo(map);
+
+  let features = []; // full array of features
+  let table; // DataTable instance
+  let tableColumns = []; // header keys order: all properties keys + lon + lat
+
+  // Load GeoJSON
+  fetch('https://github.com/mic-haf/my-geo/blob/main/z-shift_4.geojson')
+    .then(r => {
+      if (!r.ok) throw new Error('GeoJSON konnte nicht geladen werden');
+      return r.json();
+    })
+    .then(gj => {
+      // normalize features
+      features = (gj.type === 'FeatureCollection') ? gj.features.slice() : [];
+      if (!features.length) return;
+      // build list of property keys (union)
+      const propKeys = new Set();
+      features.forEach(f => {
+        const p = f.properties || {};
+        Object.keys(p).forEach(k => propKeys.add(k));
+      });
+      // create header: properties in sorted order for determinism
+      const keys = Array.from(propKeys).sort();
+      tableColumns = keys.concat(['lon','lat']);
+
+      // create table header
+      const thead = document.getElementById('tableHead');
+      thead.innerHTML = tableColumns.map(h => `<th>${h}</th>`).join('');
+
+      // populate Leaflet layer and initial table rows
+      features.forEach(f => {
+        geojsonLayer.addData(f);
+      });
+
+      // init DataTable (empty) and then fill with all rows
+      table = $('#propsTable').DataTable({
+        paging: true,
+        pageLength: 25,
+        columns: tableColumns.map(() => ({ data: null, defaultContent: '' })),
+        ordering: true,
+        searching: true,
+        info: true,
+        autoWidth: false
+      });
+
+      // build a helper to convert feature -> row array
+      function featureToRow(f) {
+        const p = f.properties || {};
+        const coords = (f.geometry && f.geometry.type === 'Point' && Array.isArray(f.geometry.coordinates)) ? f.geometry.coordinates : [null,null];
+        return tableColumns.map(c => {
+          if (c === 'lon') return coords[0];
+          if (c === 'lat') return coords[1];
+          return p.hasOwnProperty(c) ? p[c] : '';
+        });
+      }
+
+      // fill table with all features
+      const allRows = features.map(featureToRow);
+      table.rows.add(allRows).draw();
+
+      // fit map to all points
+      try {
+        const layerBounds = geojsonLayer.getBounds();
+        if (layerBounds.isValid()) map.fitBounds(layerBounds.pad(0.1));
+      } catch(e){}
+
+      updateVisibleCount();
+    })
+    .catch(err => {
+      alert('Fehler beim Laden des GeoJSON: ' + err.message);
+    });
+
+  // Filter table to features within current map bounds
+  function filterTableToMapBounds() {
+    if (!table || !features.length) return;
+    const bounds = map.getBounds();
+    // build rows for visible features
+    const visibleRows = [];
+    features.forEach(f => {
+      if (f.geometry && f.geometry.type === 'Point') {
+        const [lon, lat] = f.geometry.coordinates;
+        if (bounds.contains([lat, lon])) {
+          const p = f.properties || {};
+          const row = tableColumns.map(c => (c === 'lon' ? lon : c === 'lat' ? lat : (p.hasOwnProperty(c) ? p[c] : '')));
+          visibleRows.push(row);
+        }
+      }
+    });
+    // replace table data with visibleRows
+    table.clear();
+    table.rows.add(visibleRows);
+    table.draw(false);
+    updateVisibleCount();
+  }
+
+  // Update visible count display
+  function updateVisibleCount(){
+    const cnt = table ? table.rows().count() : 0;
+    document.getElementById('visibleCount').textContent = cnt;
+  }
+
+  // Map events
+  map.on('moveend', filterTableToMapBounds);
+
+  // Buttons
+  document.getElementById('zoomAll').addEventListener('click', () => {
+    if (geojsonLayer.getBounds && geojsonLayer.getBounds().isValid()) map.fitBounds(geojsonLayer.getBounds().pad(0.1));
+  });
+
+  // CSV export of currently visible table rows
+  document.getElementById('exportCSV').addEventListener('click', () => {
+    if (!table) return;
+    const headers = tableColumns;
+    const data = table.rows({ search: 'applied' }).data().toArray(); // current rows (shown)
+    // convert to CSV
+    const esc = v => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (s.includes('"') || s.includes(',') || s.includes('\n')) return '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    };
+    let csv = headers.map(esc).join(',') + '\n';
+    data.forEach(row => {
+      csv += row.map(esc).join(',') + '\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'visible_points.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // Initial behaviour: after map moveend triggered once, ensure table shows visible points.
+  // If no move happened yet, wait a short time and then filter (map fitted earlier).
+  setTimeout(() => filterTableToMapBounds(), 500);
+
+  </script>
+</body>
+</html>
